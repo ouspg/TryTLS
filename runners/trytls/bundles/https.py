@@ -162,6 +162,39 @@ def local(accept, cn, description):
             )
 
 
+@testenv
+def local_cipher_suites(accept, suites, note=None):
+    description = "obsolete {} cipher suites".format(suites)
+    if note:
+        description += " ({})".format(note)
+
+    context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+    try:
+        context.set_ciphers(suites)
+    except ssl.SSLError:
+        yield Test(
+            accept=accept,
+            description=description,
+            host="localhost",
+            port=0,
+            forced_result=results.Skip("TryTLS does not support {} cipher suites".format(suites))
+        )
+        return
+
+    certdata, keydata, cadata = gencert("localhost")
+    with tmpfiles(certdata, keydata, cadata) as (certfile, keyfile, cafile):
+        context.load_cert_chain(certfile, keyfile)
+
+        with http_server(context) as (host, port):
+            yield Test(
+                accept=accept,
+                description=description,
+                host=host,
+                port=port,
+                cafile=cafile
+            )
+
+
 @testgroup
 def badssl_tests():
     forced_result = None
@@ -229,7 +262,11 @@ badtls_tests = testgroup(
 local_tests = testgroup(
     local(True, "localhost", "valid localhost certificate"),
     local(False, "nothing", "invalid localhost certificate"),
-    badssl_onlymyca("use only the given CA bundle, not system's")
+    badssl_onlymyca("use only the given CA bundle, not system's"),
+    local_cipher_suites(False, "NULL"),
+    local_cipher_suites(False, "EXPORT"),
+    local_cipher_suites(False, "DES"),
+    local_cipher_suites(False, "3DES", "vulnerable to Sweet32")
 )
 
 all_tests = testgroup(
